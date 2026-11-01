@@ -1,0 +1,86 @@
+diff --git a/src/loom/api.py b/src/loom/api.py
+index 5c81353..9a4a5cf 100644
+--- a/src/loom/api.py
++++ b/src/loom/api.py
+@@ -97,6 +97,18 @@ class ReconciliationEvidence(Input):
+     summary: str = Field(min_length=1, max_length=2000)
+ 
+ 
++class EffectRegistrationInput(Input):
++    """ms 执行器在不可逆动作开始前的意图登记（方案 v2.5 步骤三）。
++    operation_id 是幂等锚：同 operation_id 重复登记返回 dispatch=false，
++    不同请求复用同 operation_id 会被拒绝。"""
++    task_id: str
++    worker_id: str
++    epoch: int = Field(ge=0)
++    operation_id: str = Field(min_length=1, max_length=200)
++    tool_name: str = Field(min_length=1, max_length=200)
++    side_effect_level: Literal["read", "write", "destructive", "irreversible"]
++
++
+ class ReconciliationInput(Input):
+     decision: str = Field(pattern=r"^(completed|not_sent)$")
+     evidence: ReconciliationEvidence
+@@ -375,6 +387,20 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
+             raise HTTPException(404, "unknown control action")
+         return getattr(operators, action)(identity.tenant_id, run_id, idempotency_key, "subject:" + identity.subject_id, body.reason)
+ 
++    @app.post("/v1/runs/{run_id}/effects", status_code=201)
++    def register_effect(run_id: str, body: EffectRegistrationInput, identity: Claimer, idempotency_key: Key):
++        # ms 副作用登记端点（方案 v2.5 步骤三，分布式不重放的前提）：
++        # 复用 store.begin_effect 的可信意图账本——claim 校验、operation_id 幂等、
++        # state=intent、tool.intent 事件全部由既有路径承担。鉴权语义与
++        # /claim 路由一致（developer 旁路 + 主体匹配），深层校验在 _assert_claim。
++        if "developer" not in identity.roles and body.worker_id != identity.subject_id:
++            raise HTTPException(403, "worker identity must match the authenticated subject")
++        # Claim 必须以持有租约的 worker 身份构造（与 claim_next 记录一致），
++        # _assert_claim 据此校验 worker/epoch/租约。
++        claim = Claim(identity.tenant_id, run_id, body.task_id, body.worker_id, body.epoch, 0)
++        return store.begin_effect(claim, body.operation_id,
++                                  {"tool_name": body.tool_name, "side_effect_level": body.side_effect_level})
++
+     @app.post("/v1/runs/{run_id}/effects/{call_id}/reconcile")
+     def reconcile(run_id: str, call_id: str, body: ReconciliationInput, identity: Controller, idempotency_key: Key):
+         return operators.reconcile_effect(identity.tenant_id, run_id, call_id, idempotency_key,
+@@ -541,7 +567,13 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
+         return store.submit_output(current, idempotency_key, body.output)
+ 
+     @app.get("/v1/runs/{run_id}/events")
+-    def events(run_id: str, tenant: Tenant):
++    def events(run_id: str, tenant: Tenant,
++               after_seq: int = Query(default=0, ge=0),
++               limit: int = Query(default=0, ge=0, le=500)):
++        # ms 游标分页（方案 v2.5 步骤三）：limit>0 时返回 {events, next_seq}，
++        # 游标归消费者所有；limit=0 保持原全量快照形状，旧消费者不受影响。
++        if limit > 0:
++            return store.events_page(tenant, run_id, after_seq=after_seq, limit=limit)
+         return {"events": store.events(tenant, run_id)}
+ 
+     @app.get("/v1/runs/{run_id}/replay")
+diff --git a/src/loom/store.py b/src/loom/store.py
+index b966ddf..a2b9763 100644
+--- a/src/loom/store.py
++++ b/src/loom/store.py
+@@ -617,6 +617,22 @@ class Store:
+             self._run(db, tenant, run_id)
+             return [{**json.loads(r["envelope"]), "hash": r["hash"]} for r in db.execute("SELECT envelope,hash FROM events WHERE tenant=? AND run_id=? ORDER BY seq", (tenant, run_id))]
+ 
++    def events_page(self, tenant: str, run_id: str, *, after_seq: int = 0, limit: int = 100) -> dict:
++        """Cursor pagination for external workers (ms). The cursor is consumer-owned:
++        each worker holds its own after_seq; there is no shared cursor."""
++        if after_seq < 0:
++            raise InvalidInput("after_seq must be >= 0")
++        if limit < 1 or limit > 500:
++            raise InvalidInput("limit must be between 1 and 500")
++        with self.connect() as db:
++            self._run(db, tenant, run_id)
++            rows = db.execute(
++                "SELECT seq,envelope,hash FROM events WHERE tenant=? AND run_id=? AND seq>? ORDER BY seq LIMIT ?",
++                (tenant, run_id, after_seq, limit)).fetchall()
++            events = [{**json.loads(r["envelope"]), "hash": r["hash"]} for r in rows]
++            next_seq = events[-1]["seq"] if events else after_seq
++            return {"events": events, "next_seq": next_seq}
++
+     @staticmethod
+     def verify_events(events: list[dict], expected_head: str | None = None, expected_count: int | None = None) -> bool:
+         prev = "0" * 64
