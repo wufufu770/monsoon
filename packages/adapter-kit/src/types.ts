@@ -265,6 +265,13 @@ export interface ConnectorTool {
   inputSchema: Record<string, unknown>;
   /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
+  /**
+   * 拍板三延伸（方案 v2.5 步骤五，ms 扩展字段）：declared network egress.
+   * `none` = 该工具不出网；`declared` = 允许联网且已在安装与调用审计中披露；
+   * `undeclared`（缺省）= 未声明，按可能联网处理——仅披露，不拦截。
+   * 定位是披露不是门禁；缺省语义由 ms-runtime/policy 的代码常量固定，不可配置。
+   */
+  networkAccess?: "none" | "declared" | "undeclared";
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
   /** In-process routing metadata. It is never exposed to the model. */
