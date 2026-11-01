@@ -2,7 +2,7 @@
 
 > 跑在用户自己机器上的**桌面常驻 agent**。单独用：桌面 app 即全天候 agent（本机对话、本机执行、本地定时，托盘常驻）；连接 [Loom](https://github.com/Lizekai-522/Loom)：把需要中心能力（编排、审计、跨机协同）的任务外包给中心；**多台 ms 可以同时向一台 Loom 提交任务互不踩踏，一台 ms 也可以同时服务多台 Loom**。
 
-状态：**方案 v2.4 定稿，实施未开始**。基于 [rakazo](https://github.com/elie222/rakazo)（Apache-2.0）`apps/desktop` 重构二开；Loom 侧为 Python 编排中心（本仓库的"另一半"）。完整方案书与调查记录见 [Loom 仓库 docs/monsoon-harness/](https://github.com/Lizekai-522/Loom/tree/main/docs/monsoon-harness)。
+状态：**方案 v2.4 定稿，批次零进行中**（rakazo 基线已导入并构建跑通）。基于 [rakazo](https://github.com/elie222/rakazo)（Apache-2.0）`apps/desktop` 重构二开；Loom 侧为 Python 编排中心（本仓库的"另一半"）。完整方案书与调查记录见 [Loom 仓库 docs/monsoon-harness/](https://github.com/Lizekai-522/Loom/tree/main/docs/monsoon-harness)。
 
 ---
 
@@ -97,7 +97,7 @@ Loom 与 ms **按一个整体设计，两侧互相适配**——一体化的单�
 
 | 批次 | 内容 | 状态 |
 |---|---|---|
-| 零 | fork rakazo 钉 `d13ef7a` + 裁剪 + desktop 构建跑通 | ⬜ 未开始 |
+| 零 | fork rakazo 钉 `d13ef7a` + 裁剪 + desktop 构建跑通 | 🔶 第一刀完成：vendor `d13ef7a`（3851 文件入库、溯源与 Apache-2.0 合规）、裁剪 apps/mobile+apps/www+CI workflows、**desktop build 跑通（dist/main.js）**、adapter-kit 148 测试通过；待做：文件级裁剪（计费/消息平台/多云沙箱/local-stack） |
 | 一 | 桌面壳 ms 化：中文界面、Pi 入桌面 main 进程、本地派活入口（与批次三并行） | ⬜ 未开始 |
 | 二 | 本机执行域：沙箱三模式、凭证绊线、联网声明、本地审计替身（按中心分链） | ⬜ 未开始 |
 | 三 | **Loom 侧改造**（上方需求清单 #1-4）：事件游标、副作用登记端点、关闭机器批准路径、角色调整 | ✅ 已批准先行 |
