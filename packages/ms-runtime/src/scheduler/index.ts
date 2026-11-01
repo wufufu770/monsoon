@@ -1,2 +1,9 @@
 export { EventGateway, type EventGatewayOptions, type GatewayAction, type GatewayDecision, type GatewayEvent, type SlowPath } from "./event-gateway.js";
 export { WakeupBudget, type WakeupBudgetOptions, type WakeupBudgetVerdict } from "./wakeup-budget.js";
+export {
+  claimNextLocal,
+  dispatchLocalTask,
+  finishLocalTask,
+  getLocalTask,
+  type LocalTaskRow,
+} from "./dispatch.js";

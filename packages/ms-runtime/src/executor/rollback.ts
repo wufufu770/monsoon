@@ -1,12 +1,21 @@
 /**
- * 回滚分支（方案 v2.5 步骤七收尾，NetMind 事务性回滚语义）：
- * Loom 的副作用 reconcile 响应增加可选 `rollback_hint`（Loom 侧可暂时返回 null）。
- * ms 执行器收到非空 hint 时，按工具声明的回滚动作执行本地回滚；工具未声明
- * 回滚能力时不得执行任何动作，转为待人工（写审计）。
+ * 回滚分支（方案 v2.5 步骤七收尾，NetMind 事务性回滚语义——只引入语义不复制代码）。
+ *
+ * v3 契约：Loom 的 reconcile 响应携带可选 `rollback_hint`
+ * { call_id, tool_name, reason, params? }（Loom 侧 Phase 1 可始终返回 null）。
+ * ms 侧按"非空才回滚"处理；回滚动作本身**也是一个副作用**——执行前以新
+ * call_id 登记（POST /effects）并提交 pi-durable 检查点，防止回滚被执行两次。
+ *
+ * 审计事件（入本地哈希链）：effect.rollback_started / effect.rollback_completed /
+ * effect.rollback_failed / effect.rollback_unsupported。
+ * PreExecutionProof 的三校验（执行前）保持不动，本模块只补"执行后"分支。
  */
+import type { AuditChain } from "../policy/audit-chain.js";
+
 export interface RollbackHint {
-  /** 回滚动作标识，由 Loom 侧对账策略给出（如 "fs.undo-write"）。 */
-  readonly action: string;
+  readonly callId: string;
+  readonly toolName: string;
+  readonly reason: string;
   readonly params?: Record<string, unknown>;
 }
 
@@ -16,42 +25,95 @@ export interface ReconcileOutcome {
   readonly rollbackHint?: RollbackHint | null;
 }
 
-/** 工具侧声明的回滚能力（能力插件在工具声明里提供）。 */
-export interface RollbackCapability {
-  /** 可回滚的动作标识集合（与 hint.action 匹配才执行）。 */
-  readonly supportedActions: readonly string[];
-  /** 执行回滚；实现方保证幂等。 */
-  readonly execute: (hint: RollbackHint) => Promise<void>;
+/** 工具声明（与 adapter-kit ConnectorTool 对齐）：rollback 是否声明。 */
+export interface RollbackToolDeclaration {
+  readonly name: string;
+  readonly rollback?: boolean;
 }
 
-export type RollbackDecision =
-  | { readonly action: "rollback"; readonly hint: RollbackHint }
-  | { readonly action: "manual"; readonly reason: string }
-  | { readonly action: "none"; readonly reason: string };
-
-export function planRollback(outcome: ReconcileOutcome, capability: RollbackCapability | null): RollbackDecision {
-  const hint = outcome.rollbackHint;
-  if (!hint) return { action: "none", reason: "reconcile 未携带 rollback_hint" };
-  if (!capability) return { action: "manual", reason: "工具未声明回滚能力，转人工" };
-  if (!capability.supportedActions.includes(hint.action)) {
-    return { action: "manual", reason: `工具不支持回滚动作 ${hint.action}` };
-  }
-  return { action: "rollback", hint };
+/** 执行器注入的回滚环境：审计链、副作用登记（新 call_id）、真正的回滚执行。 */
+export interface RollbackContext {
+  readonly audit: AuditChain;
+  /** 回滚自身登记：POST /effects + pi-durable 检查点（实现方保证幂等）。 */
+  readonly registerSideEffect: (input: {
+    callId: string;
+    toolName: string;
+    sideEffectLevel: "read" | "write" | "destructive" | "irreversible";
+  }) => Promise<void>;
+  /** 能力插件的回滚执行（实现方保证幂等）。 */
+  readonly executeRollback: (hint: RollbackHint) => Promise<void>;
+  /** 回滚动作自身的副作用等级（代码常量缺省 write）。 */
+  readonly rollbackSideEffectLevel?: "read" | "write" | "destructive" | "irreversible";
 }
 
-/** 执行回滚判定并返回审计载荷（判定入哈希链）。 */
-export async function applyRollback(
+export type RollbackKind =
+  | "none"
+  | "rollback_unsupported"
+  | "rollback_started"
+  | "rollback_failed";
+
+export interface RollbackOutcome {
+  readonly kind: RollbackKind;
+  /** 回滚自身登记的 call_id（kind=rollback_started 时存在）。 */
+  readonly rollbackCallId?: string;
+  readonly reason?: string;
+}
+
+/** 回滚自身登记的 call_id 派生规则：与原始调用绑定、永不相同。 */
+export function rollbackCallId(originalCallId: string): string {
+  return `${originalCallId}:rollback`;
+}
+
+/**
+ * reconcile 的回滚处理：非空 hint 才处理；未声明 rollback 的工具绝不尝试回滚。
+ * 判定与三段审计事件全部入本地哈希链。
+ */
+export async function handleReconcileRollback(
   outcome: ReconcileOutcome,
-  capability: RollbackCapability | null,
-): Promise<{ decision: RollbackDecision; audit: Record<string, unknown> }> {
-  const decision = planRollback(outcome, capability);
-  if (decision.action === "rollback") {
-    await capability!.execute(decision.hint);
+  tool: RollbackToolDeclaration,
+  context: RollbackContext,
+): Promise<RollbackOutcome> {
+  const hint = outcome.rollbackHint;
+  if (!hint) return { kind: "none", reason: "reconcile 未携带 rollback_hint" };
+
+  if (tool.rollback !== true) {
+    context.audit.append({
+      type: "effect.rollback_unsupported",
+      actor: "executor",
+      payload: { callId: outcome.callId, toolName: hint.toolName, reason: hint.reason },
+    });
+    return { kind: "rollback_unsupported", reason: "工具未声明 rollback 能力，转人工介入" };
   }
-  const audit = {
-    type: `rollback.${decision.action}`,
+
+  const derivedCallId = rollbackCallId(hint.callId);
+  context.audit.append({
+    type: "effect.rollback_started",
     actor: "executor",
-    payload: { callId: outcome.callId, state: outcome.state, reason: "reason" in decision ? decision.reason : null },
-  };
-  return { decision, audit };
+    payload: { callId: outcome.callId, rollbackCallId: derivedCallId, toolName: hint.toolName, reason: hint.reason },
+  });
+  try {
+    // 回滚本身是副作用：登记（防回滚被执行两次）后再执行。
+    await context.registerSideEffect({
+      callId: derivedCallId,
+      toolName: hint.toolName,
+      sideEffectLevel: context.rollbackSideEffectLevel ?? "write",
+    });
+    await context.executeRollback(hint);
+    context.audit.append({
+      type: "effect.rollback_completed",
+      actor: "executor",
+      payload: { callId: outcome.callId, rollbackCallId: derivedCallId, toolName: hint.toolName },
+    });
+    return { kind: "rollback_started", rollbackCallId: derivedCallId, reason: hint.reason };
+  } catch (error) {
+    context.audit.append({
+      type: "effect.rollback_failed",
+      actor: "executor",
+      payload: {
+        callId: outcome.callId, rollbackCallId: derivedCallId, toolName: hint.toolName,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    return { kind: "rollback_failed", rollbackCallId: derivedCallId, reason: "回滚执行失败，转人工介入" };
+  }
 }

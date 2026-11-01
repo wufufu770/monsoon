@@ -23,6 +23,16 @@
       "types": "./src/executor/index.ts",
       "development": "./src/executor/index.ts",
       "default": "./src/executor/index.ts"
+    },
+    "./supervisor": {
+      "types": "./src/supervisor/index.ts",
+      "development": "./src/supervisor/index.ts",
+      "default": "./src/supervisor/index.ts"
+    },
+    "./loom": {
+      "types": "./src/loom/index.ts",
+      "development": "./src/loom/index.ts",
+      "default": "./src/loom/index.ts"
     }
   },
   "scripts": {
@@ -32,5 +42,9 @@
   "devDependencies": {
     "typescript": "7.0.2",
     "vitest": "4.1.12"
+  },
+  "dependencies": {
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0"
   }
 }

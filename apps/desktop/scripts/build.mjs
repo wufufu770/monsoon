@@ -1,8 +1,12 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: ["src/main.ts"],
-  outfile: "dist/main.js",
+  entryPoints: [
+    "src/main.ts",
+    "src/monsoon/scheduler-main.ts",
+    "src/monsoon/executor-main.ts",
+  ],
+  outdir: "dist",
   bundle: true,
   platform: "node",
   format: "esm",

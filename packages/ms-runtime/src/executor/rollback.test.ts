@@ -1,27 +1,80 @@
 import { describe, expect, it } from "vitest";
-import { applyRollback, planRollback } from "./rollback.js";
+import { AuditChain } from "../policy/audit-chain.js";
+import { handleReconcileRollback, rollbackCallId, type RollbackContext } from "./rollback.js";
 
-describe("回滚分支（步骤七收尾）", () => {
-  const capability = {
-    supportedActions: ["fs.undo-write"],
-    execute: async () => undefined,
+function makeContext(overrides: Partial<RollbackContext> = {}): { context: RollbackContext; registered: string[] } {
+  const registered: string[] = [];
+  const context: RollbackContext = {
+    audit: new AuditChain(),
+    registerSideEffect: async (input) => {
+      registered.push(input.callId);
+    },
+    executeRollback: async () => undefined,
+    ...overrides,
   };
+  return { context, registered };
+}
 
-  it("reconcile 携带 hint 且工具声明支持 → rollback", async () => {
-    const outcome = { callId: "c1", state: "completed" as const, rollbackHint: { action: "fs.undo-write" } };
-    const { decision, audit } = await applyRollback(outcome, capability);
-    expect(decision.action).toBe("rollback");
-    expect(audit.type).toBe("rollback.rollback");
+describe("回滚分支（步骤七收尾，v3 契约）", () => {
+  const hint = { callId: "ms-1:run:task:1", toolName: "fs.write", reason: "结算发现越界写入" };
+
+  it("声明 rollback 且收到 hint：登记新 call_id + 三段审计事件（验收项）", async () => {
+    const { context, registered } = makeContext();
+    const outcome = await handleReconcileRollback(
+      { callId: hint.callId, state: "completed", rollbackHint: hint },
+      { name: "fs.write", rollback: true },
+      context,
+    );
+    expect(outcome.kind).toBe("rollback_started");
+    expect(outcome.rollbackCallId).toBe(rollbackCallId(hint.callId));
+    expect(outcome.rollbackCallId).not.toBe(hint.callId);
+    expect(registered).toEqual([rollbackCallId(hint.callId)]);
+    const types = context.audit.all().map((event) => event.type);
+    expect(types).toEqual(["effect.rollback_started", "effect.rollback_completed"]);
+    expect(context.audit.verify().ok).toBe(true);
   });
 
-  it("无 hint → none；有 hint 无能力 → 转人工", async () => {
-    expect(planRollback({ callId: "c", state: "completed" }, capability).action).toBe("none");
-    expect(planRollback({ callId: "c", state: "completed", rollbackHint: { action: "db.undo" } }, capability).action)
-      .toBe("manual");
+  it("未声明 rollback：不执行、写 rollback_unsupported 并转人工（验收项）", async () => {
+    const { context, registered } = makeContext();
+    const outcome = await handleReconcileRollback(
+      { callId: hint.callId, state: "completed", rollbackHint: hint },
+      { name: "fs.write", rollback: false },
+      context,
+    );
+    expect(outcome.kind).toBe("rollback_unsupported");
+    expect(registered).toEqual([]);
+    expect(context.audit.all().map((event) => event.type)).toEqual(["effect.rollback_unsupported"]);
   });
 
-  it("不支持的回滚动作转人工，绝不盲执行", async () => {
-    const decision = planRollback({ callId: "c", state: "completed", rollbackHint: { action: "unknown.action" } }, capability);
-    expect(decision.action).toBe("manual");
+  it("回滚执行失败：rollback_failed 入链，不静默", async () => {
+    const { context } = makeContext({
+      executeRollback: async () => {
+        throw new Error("undo I/O error");
+      },
+    });
+    const outcome = await handleReconcileRollback(
+      { callId: hint.callId, state: "completed", rollbackHint: hint },
+      { name: "fs.write", rollback: true },
+      context,
+    );
+    expect(outcome.kind).toBe("rollback_failed");
+    expect(context.audit.all().map((event) => event.type)).toEqual([
+      "effect.rollback_started", "effect.rollback_failed",
+    ]);
+  });
+
+  it("无 hint：不产生任何审计事件", async () => {
+    const { context } = makeContext();
+    const outcome = await handleReconcileRollback(
+      { callId: "c", state: "completed" },
+      { name: "fs.write", rollback: true },
+      context,
+    );
+    expect(outcome.kind).toBe("none");
+    expect(context.audit.all()).toHaveLength(0);
+  });
+
+  it("回滚自身登记的 call_id 派生规则：与原始绑定且不同", () => {
+    expect(rollbackCallId("ms-1:run:task:1")).toBe("ms-1:run:task:1:rollback");
   });
 });

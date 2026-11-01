@@ -272,6 +272,13 @@ export interface ConnectorTool {
    * 定位是披露不是门禁；缺省语义由 ms-runtime/policy 的代码常量固定，不可配置。
    */
   networkAccess?: "none" | "declared" | "undeclared";
+  /**
+   * 拍板二十延伸（方案 v2.5 步骤七，NetMind 事务性回滚语义）：
+   * 声明本工具支持 reconcile 的 rollback_hint 回滚。声明后，执行器在收到
+   * 非空 rollback_hint 时执行回滚并把回滚本身登记为新副作用（新 call_id）；
+   * 未声明则收到 hint 时写 effect.rollback_unsupported 并转人工。
+   */
+  rollback?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
   batch?: ToolBatch;
   /** In-process routing metadata. It is never exposed to the model. */

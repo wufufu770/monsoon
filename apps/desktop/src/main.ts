@@ -20,6 +20,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   net,
   powerMonitor,
   safeStorage,
@@ -27,9 +28,11 @@ import {
   session,
   shell,
   systemPreferences,
+  Tray,
 } from "electron";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
+import { TraySupervisor } from "./monsoon/tray-supervisor.js";
 import { fromAppFrame } from "./app-frame.js";
 import { createAppOpener } from "./app-opener.js";
 import type { ElectronAutoUpdater } from "./auto-update.js";
@@ -1721,4 +1724,41 @@ app.on("before-quit", () => {
   userDevices?.close();
   void hostScreen?.close();
   localStack?.abort();
+});
+
+// ============================================================================
+// ms 托盘 supervisor（方案 v2.5 步骤一）：调度器与执行器子进程的生命周期监督。
+// 独立 whenReady 监听者；托盘常驻边界 = 托盘退出即全部子进程退出（无 manifest
+// adoption）。before-quit 拦截一次：先走上方 rakazo 清理，再 SIGTERM 子进程
+// （5s 超时 SIGKILL），完成后 app.exit(0)。已知取舍：自动更新触发的 quit 也会
+// 走此路径，Phase 1 接受（见 apps/desktop/TRAY-SUPERVISOR.md 第六节）。
+// ============================================================================
+void app.whenReady().then(() => {
+  try {
+    const traySupervisor = new TraySupervisor({
+      distDir: import.meta.dirname,
+      dataDir: path.join(app.getPath("userData"), "ms-data"),
+      showMainWindow: () => {
+        if (setupWindow !== null && !setupWindow.isDestroyed()) {
+          setupWindow.show();
+          setupWindow.focus();
+          return;
+        }
+        if (mainWindow !== null && !mainWindow.isDestroyed()) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    });
+    void traySupervisor.start();
+    let quitting = false;
+    app.on("before-quit", (event) => {
+      if (quitting) return;
+      quitting = true;
+      event.preventDefault();
+      void traySupervisor.stop().then(() => app.exit(0));
+    });
+  } catch (error) {
+    console.error("[ms-tray] supervisor 初始化失败（不致命，ms 子进程未启动）", error);
+  }
 });

@@ -1,5 +1,5 @@
 diff --git a/src/loom/api.py b/src/loom/api.py
-index 5c81353..9a4a5cf 100644
+index 5c81353..63dc59a 100644
 --- a/src/loom/api.py
 +++ b/src/loom/api.py
 @@ -97,6 +97,18 @@ class ReconciliationEvidence(Input):
@@ -7,13 +7,13 @@ index 5c81353..9a4a5cf 100644
  
  
 +class EffectRegistrationInput(Input):
-+    """ms 执行器在不可逆动作开始前的意图登记（方案 v2.5 步骤三）。
-+    operation_id 是幂等锚：同 operation_id 重复登记返回 dispatch=false，
-+    不同请求复用同 operation_id 会被拒绝。"""
++    """ms 执行器在不可逆动作开始前的意图登记（方案 v2.5 步骤三，v3 契约）。
++    call_id 由调用方提供，(tenant, call_id) 幂等：重复登记返回 200 与已有记录，
++    不报错、不覆盖；同 call_id 不同请求内容会被拒绝。"""
 +    task_id: str
 +    worker_id: str
 +    epoch: int = Field(ge=0)
-+    operation_id: str = Field(min_length=1, max_length=200)
++    call_id: str = Field(min_length=1, max_length=200)
 +    tool_name: str = Field(min_length=1, max_length=200)
 +    side_effect_level: Literal["read", "write", "destructive", "irreversible"]
 +
@@ -25,19 +25,19 @@ index 5c81353..9a4a5cf 100644
              raise HTTPException(404, "unknown control action")
          return getattr(operators, action)(identity.tenant_id, run_id, idempotency_key, "subject:" + identity.subject_id, body.reason)
  
-+    @app.post("/v1/runs/{run_id}/effects", status_code=201)
++    @app.post("/v1/runs/{run_id}/effects")
 +    def register_effect(run_id: str, body: EffectRegistrationInput, identity: Claimer, idempotency_key: Key):
-+        # ms 副作用登记端点（方案 v2.5 步骤三，分布式不重放的前提）：
-+        # 复用 store.begin_effect 的可信意图账本——claim 校验、operation_id 幂等、
-+        # state=intent、tool.intent 事件全部由既有路径承担。鉴权语义与
-+        # /claim 路由一致（developer 旁路 + 主体匹配），深层校验在 _assert_claim。
++        # ms 副作用登记端点（方案 v2.5 步骤三，v3 契约）：端点只记录意图、不执行动作。
++        # 首次登记 201，同 (tenant, call_id) 重复登记 200 返回已有记录，不报错、不覆盖。
++        # 鉴权语义与 /claim 路由一致（developer 旁路 + 主体匹配），深层校验
++        # （worker/epoch/租约/运行状态）在 register_external_effect 的 _assert_claim。
 +        if "developer" not in identity.roles and body.worker_id != identity.subject_id:
 +            raise HTTPException(403, "worker identity must match the authenticated subject")
-+        # Claim 必须以持有租约的 worker 身份构造（与 claim_next 记录一致），
-+        # _assert_claim 据此校验 worker/epoch/租约。
++        # Claim 必须以持有租约的 worker 身份构造（与 claim_next 记录一致）。
 +        claim = Claim(identity.tenant_id, run_id, body.task_id, body.worker_id, body.epoch, 0)
-+        return store.begin_effect(claim, body.operation_id,
-+                                  {"tool_name": body.tool_name, "side_effect_level": body.side_effect_level})
++        result = store.register_external_effect(claim, body.call_id,
++                                                {"tool_name": body.tool_name, "side_effect_level": body.side_effect_level})
++        return JSONResponse(content=result, status_code=201 if result["created"] else 200)
 +
      @app.post("/v1/runs/{run_id}/effects/{call_id}/reconcile")
      def reconcile(run_id: str, call_id: str, body: ReconciliationInput, identity: Controller, idempotency_key: Key):
@@ -58,10 +58,40 @@ index 5c81353..9a4a5cf 100644
  
      @app.get("/v1/runs/{run_id}/replay")
 diff --git a/src/loom/store.py b/src/loom/store.py
-index b966ddf..a2b9763 100644
+index b966ddf..a27c4c8 100644
 --- a/src/loom/store.py
 +++ b/src/loom/store.py
-@@ -617,6 +617,22 @@ class Store:
+@@ -491,6 +491,29 @@ class Store:
+         with self.transaction() as db:
+             return self._begin_effect(db, claim, operation_id, request)
+ 
++    def register_external_effect(self, claim: Claim, call_id: str, request: dict) -> dict:
++        """ms 执行器的意图登记（方案 v2.5 步骤三，v3 契约）：调用方提供 call_id，
++        (tenant, call_id) 幂等——重复登记返回已有记录，不报错、不覆盖。
++        复用 _begin_effect 的 claim 校验与 tool.intent 事件路径。"""
++        if not call_id:
++            raise InvalidInput("call_id required")
++        with self.transaction() as db:
++            self._assert_claim(db, claim)
++            old = db.execute("SELECT * FROM effects WHERE tenant=? AND id=?",
++                             (claim.tenant_id, call_id)).fetchone()
++            if old:
++                if old["request_hash"] != digest(request) or old["run_id"] != claim.run_id:
++                    raise Conflict("call_id reused with different request")
++                return {"call_id": call_id, "status": "registered", "state": old["state"], "created": False}
++            db.execute("INSERT INTO effects VALUES (?,?,?,?,?,?,?,?)",
++                       (claim.tenant_id, call_id, claim.run_id, claim.task_id, claim.epoch,
++                        digest(request), "intent", None))
++            result = {"call_id": call_id, "task_id": claim.task_id, "status": "registered",
++                      "state": "intent", "created": True}
++            self._event(db, claim.tenant_id, claim.run_id, "tool.intent",
++                        {"call_id": call_id, "task_id": claim.task_id}, "gateway")
++            return result
++
+     def _begin_effect(self, db, claim: Claim, operation_id: str, request: dict) -> dict:
+         if not operation_id:
+             raise InvalidInput("stable operation ID required")
+@@ -617,6 +640,22 @@ class Store:
              self._run(db, tenant, run_id)
              return [{**json.loads(r["envelope"]), "hash": r["hash"]} for r in db.execute("SELECT envelope,hash FROM events WHERE tenant=? AND run_id=? ORDER BY seq", (tenant, run_id))]
  

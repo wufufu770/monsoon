@@ -9,3 +9,5 @@ export * from "./policy/index.js";
 export * from "./scheduler/index.js";
 export * from "./executor/index.js";
 export * from "./supervisor/index.js";
+export * from "./loom/index.js";
+export { ExecutorLoop, sideEffectCallId, type ExecutorLoopOptions, type ExecutorTool, type TickOutcome } from "./executor/loop.js";

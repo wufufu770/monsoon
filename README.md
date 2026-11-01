@@ -1,131 +1,104 @@
-# monsoon-harness（ms）
+# Monsoon
 
-> 跑在用户自己机器上的**桌面常驻 agent**。单独用：桌面 app 即全天候 agent（本机对话、本机执行、本地定时，托盘常驻）；连接 [Loom](https://github.com/Lizekai-522/Loom)：把需要中心能力（编排、审计、跨机协同）的任务外包给中心；**多台 ms 可以同时向一台 Loom 提交任务互不踩踏，一台 ms 也可以同时服务多台 Loom**。
+**Monsoon（monsoon-harness / ms）是跑在用户自己电脑上的桌面 AI agent。**
+它可以独立工作，也可以把需要编排与审计的任务交给 [Loom](https://github.com/Lizekai-522/Loom) 中心处理。
 
-状态：**方案 v2.4 定稿，批次零进行中**（rakazo 基线已导入并构建跑通）。基于 [rakazo](https://github.com/elie222/rakazo)（Apache-2.0）`apps/desktop` 重构二开；Loom 侧为 Python 编排中心（本仓库的"另一半"）。完整方案书与调查记录见 [Loom 仓库 docs/monsoon-harness/](https://github.com/Lizekai-522/Loom/tree/main/docs/monsoon-harness)。
+- **独立使用**：安装即用——托盘常驻、本地对话、本机执行、本地定时，无账号、无云端依赖，接入大模型 API key 即可。
+- **连接 Loom**：把需要编排、审计、预算控制的任务外包给 Loom 中心；一台 ms 可同时服务多台 Loom，多台 ms 可共用一台 Loom 而互不踩踏。
 
----
+> 状态：**v5 开发中**。核心链路（派活 → 执行 → 副作用登记 → 崩溃恢复不重放）已通过全链路联调；
+> 模型会话接入正在集成。方案与施工记录见 [`docs/`](docs/)。
 
-## 一、定位：一个整体的两半
+## 它解决什么问题
 
-Loom 与 ms **按一个整体设计，两侧互相适配**——一体化的单位是**契约与语义**（动作接口、事件信封、租约/epoch、幂等、判据、角色），不是进程或部署。因此：
+市面上的桌面 agent 通常面临三个矛盾：能力上限与数据安全、自动化与可控性、
+单机智能与多机协同。Monsoon 的回答是把**执行放在你的机器上**（数据不出本机），
+把**编排与审计放在 Loom 中心**（可验证、可追责），两者之间用一份显式契约连接：
 
-- **语义一体化**：同一套契约两侧同改。ms 侧落在 TypeScript `contracts` 包与中心客户端；Loom 侧落在 `src/loom/api.py` 路由与存储。每项契约字段双侧对照登记，任何变更双侧同步（Loom 侧由 Loom 创作者实施，ms 侧按清单验收）。
-- **部署可分离**：ms 不连中心时是完整产品（独立形态）；Loom 不装 ms 也是完整产品（Loom 自立形态）。组合只是增值，不是依赖。
-- **版本握手**：配对时双向交换 `contract_version` 与能力清单，不兼容即拒绝并说明原因——两端独立演进，没有协商的契约必然崩坏。
+- **执行前有证明**：不可逆动作开始前经过三重本地校验（副作用等级是否在批准范围内、
+  联网声明是否一致、是否触碰凭证路径绊线），任一不过就不执行。
+- **执行中有登记**：每个副作用在开始前向中心登记意图，进程崩溃也不会导致
+  已执行的不可逆动作被偷偷重放。
+- **恢复后以中心账本为准**：本机检查点与中心账本不一致时，以中心为准——
+  已登记未结算的副作用转人工核对，而不是自动重跑。
 
-**Loom 侧配套修改需求清单**（由 Loom 侧实施，ms 依赖它验收）：
+## 核心特性
 
-| # | 修改 | 现状依据 | 性质 |
-|---|---|---|---|
-| 1 | 事件出口游标分页（`after_seq` + `limit`） | `src/loom/api.py:543` 现为全量返回 | 需新增 |
-| 2 | 副作用登记端点（`POST /v1/runs/{id}/effects`） | 副作用账本仅 4 处进程内写入，外部执行器无处登记 | 需新增（分布式不重放的前提） |
-| 3 | 关闭机器批准路径（禁 legacy 密钥派生 developer；operator 移除 `plan.approve`） | `src/loom/auth.py:21-25,91-95` | 需关闭 |
-| 4 | 角色能力集调整（worker 增 `control` 但仅限 pause/resume） | `src/loom/auth.py:22` | 需调整 |
-| 5 | 契约版本握手回执字段（配对/发现响应带 `contract_version`） | 现无 | 需新增 |
-| 6 | 续租路由（存储层 `renew_claim` 已有，暴露成路由） | `src/loom/store.py:376` | Phase 1 只做端点不使用 |
-| 7 | 设备直连实时通道：`WS /v1/events/stream`（token 鉴权，事件推送；ms 主动直连，无第三方中继） | 现为轮询（拍板二十修订 G3） | 需新增（实时性） |
+- **桌面常驻**：Electron 应用，托盘常驻；调度器与执行器作为受监督的子进程运行，
+  崩溃后按指数退避自动重启，关窗不停工。
+- **持久执行**：基于 pi-durable 的检查点内核——任务崩溃后从检查点恢复，
+  只读工具可安全重跑，写工具绝不重放。
+- **双执行域**：本机执行（数据不出机器）与中心执行（Loom 编排）由空间策略显式指定，
+  不做黑盒自动路由。
+- **能力插件**：进程内 TypeScript 插件 + 进程外 MCP 双通道；工具声明带
+  只读标记、联网声明与回滚能力，安装时显式披露。
+- **可审计**：本地审计哈希链 + 中心事件链，每个判定动作（拦截/放行/回滚）都有记录。
 
-## 二、系统总览
+## 快速开始
+
+```bash
+# 依赖：Node.js 22.13+ 与 pnpm 9.15+
+git clone https://github.com/wufufu770/monsoon.git
+cd monsoon
+pnpm install
+pnpm --filter @rakazo/web build && pnpm --filter @rakazo/desktop build
+
+# 启动桌面应用（开发模式）
+pnpm --filter @rakazo/desktop dev
+```
+
+首次启动选择「本机模式」——agent 在你的电脑上运行，无需任何账号。
+在设置中接入你的大模型 API key（或配置本地 Ollama）即可开始使用。
+
+打包产物（Linux AppImage 等）：见 [`apps/desktop/BUILD-PIPELINE.md`](apps/desktop/BUILD-PIPELINE.md)。
+
+## 连接 Loom（可选）
+
+1. 部署 [Loom](https://github.com/Lizekai-522/Loom) 中心（含 ms 契约端点补丁，
+   见 [`docs/loom-ms-contract.md`](docs/loom-ms-contract.md)）；
+2. 在 Monsoon 首屏选择「连接 Loom 中心」，填入中心地址完成设备配对；
+3. 此后可以在 Monsoon 里把任务提交给 Loom 编排执行，进度与审计实时同步。
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [方案书 v2.5](https://github.com/Lizekai-522/Loom/tree/main/docs/monsoon-harness) | 完整施工方案：决策记录、跨机契约、批次计划、验收判据 |
+| [BUILD-PIPELINE.md](apps/desktop/BUILD-PIPELINE.md) | 构建管线与产物结构 |
+| [TRAY-SUPERVISOR.md](apps/desktop/TRAY-SUPERVISOR.md) | 托盘进程模型与平台验证状态 |
+| [DURABLE.md](packages/ms-runtime/executor/DURABLE.md) | 持久执行内核：检查点、replay-safe 判定、恢复对账 |
+| [SECURITY-BOUNDARY.md](packages/ms-runtime/policy/SECURITY-BOUNDARY.md) | 安全边界：代码常量与审计哈希链 |
+| [GATEWAY.md](packages/ms-runtime/scheduler/GATEWAY.md) | 事件网关与两级过滤 |
+| [MODEL-INTEGRATION.md](docs/MODEL-INTEGRATION.md) | 模型接入：本地 Ollama 与云端 API |
+
+## 项目结构
 
 ```
- ┌─────────────── Loom 中心 A（Python）┐   ┌── Loom 中心 B ──┐
- │  目标/计划/任务/租约/epoch/事件哈希链  │   │   （同理）        │
- └──────────────┬─────────────────────┘   └───────┬─────────┘
-                │  16 动作契约（HTTP 轮询，本机主动出网）│
-                └──────────────┬──────────────────┘
-                    ┌──────────┴─────────── ms 桌面端（Electron，rakazo 二开）──────────┐
-                    │  托盘常驻 + 任务/运行工作台 + 中心列表                              │
-                    │  main 进程：agent 运行时(Pi) + 调度器 + 执行器 + 能力插件宿主        │
-                    │  本机执行域：host-computer + 沙箱三模式 + 凭证绊线 + 联网声明         │
-                    │  能力插件：进程内 TS ＋ 进程外 MCP（RV 执行器走 MCP 接入）             │
-                    └────────────────────────────────────────────────────────────┘
+apps/desktop            桌面应用（Electron）：托盘、主窗口、调度器/执行器子进程
+apps/api、apps/worker   本机服务栈（过渡期承载 web/api，逐步内嵌）
+apps/web                工作台前端
+packages/ms-runtime     ms 自有运行时：安全边界、事件网关、执行器循环、监督器
+packages/ms-capabilities  能力插件层（MCP stdio 宿主）
+packages/adapter-kit    能力契约层（含 ms 扩展：联网声明、回滚声明）
+packages/*（其余）       vendor 基座（rakazo，Apache-2.0）：契约、租户、隔离、审计
+docs/                   方案书、契约、联调记录、施工文档
 ```
 
-## 三、运行形态（N 中心 × M 实例矩阵）
+## 路线图
 
-| 全局形态 | 条件 | 说明 |
-|---|---|---|
-| 独立 | 已配对中心数 = 0 | 完整产品：本机对话/执行/定时 |
-| 组合 | 1 中心在线 | 与团队共享编排与审计 |
-| 多中心组合/分布式 | N ≥ 2 | 每个中心独立看待本 ms；任务带来源徽标 |
+- [x] 批次零：基线快照与裁剪
+- [x] 批次一：桌面壳、本机栈、零账号体验
+- [x] 批次二（进行中）：托盘监督、pi-durable 内核、事件网关、安全边界
+- [x] 批次三：Loom 契约端点（副作用登记 / 事件游标 / 计划读）
+- [x] 首次全链路联调（三场景通过，含 kill -9 不重放）
+- [ ] 模型会话接入（本地 Ollama 与云端 API 双路径）
+- [ ] 多中心设备直连实时通道
+- [ ] 能力插件生态（MCP 一键安装与披露）
 
-- **每中心连接状态独立**：某中心失联只冻结该中心的提交与轮询（降级是 per-center 的），其余中心与本机能力不受影响。
-- **分布式**：多台 ms × 同一台 Loom——领取带租约、提交带 epoch 栅栏与幂等键、暂停是服务端硬闸门，互不踩踏。
-- **形态判定计数必须来自中心侧**（读本机注册数永远得 1——本项目修过的真 bug）。
+## 许可与致谢
 
-## 四、技术路线（拍板九至十三）
-
-**基于 rakazo 整仓 fork（快照 `d13ef7a`）的重构二开**，"保留—裁剪—重构"三步：
-
-| 动作 | 内容 |
-|---|---|
-| **保留** | `contracts`、`adapter-kit`（18 插槽契约层）、`core`、`db`（隔离判定 `scoped`）、`auth`（Better Auth + Space，收紧 `signupsEnabled`/`signupAllowlist`）、`apps/desktop` 基础设施（auto-update/badge/窗口管理） |
-| **裁剪** | `apps/mobile`、`apps/www`、计费（Stripe）、多消息平台、多云沙箱（保留 Docker 与 host/desktop 档）、本地 Docker stack（`local-stack.ts`——服务内嵌桌面 main 进程，独立形态安装即用无 Docker 前置） |
-| **重构** | Pi 运行时从中心 API/worker 进程**搬入桌面 main 进程**（拆掉"Pi 绑死中心"禁区）；执行域默认本机；Loom 对接替换 rakazo 云对接；界面中文化；桌面进程禁止复制中心依赖图、禁止上帝工厂、配置面 ≤20 项（rakazo 可优化点清单 20 项逐项落实） |
-
-## 五、多中心设计（多台 Loom → 一台 ms）
-
-同类先例：CI runner 对每台服务器独立注册、按标签/队列分组调度；多平台 bot 是一个 agent 核心聚合 N 个带独立凭据的连接器；kubectl contexts / Docker contexts——一客户端多服务端、显式切换、状态互不渗透。ms 采用同一正统：
-
-1. **中心注册表**：本地维护 `{center_id, base_url, operator/worker 凭据对, 空间映射, 能力开关, 事件游标, 连接状态}`，桌面设置页管理；配对复用 rakazo `user-device.ts`（逐中心 N 次配对，令牌加密存储），零新协议。
-2. **本地策略是唯一信任锚**：任何中心只能**收窄**、不能放大 ms 的本地权限；任务落本地后按本地策略（命令放行检查、凭证路径绊线、沙箱档位、联网声明）再判定。
-3. **凭证按中心隔离**：A 中心签发的令牌不得作用于 B 中心（作用域绑定签发中心），跨中心引用直接拒绝。
-4. **本地调度公平性**：多中心任务竞争同一本机容量——按中心来源加权轮询（先等权），每中心并发上限可配，总量受本地上限约束。
-5. **审计按中心分链**：本地审计替身的事件链按中心分链（信封 `tenant` 字段 = 中心标识）；任务卡片带"来源中心"徽标；幂等键保持四段式 `<机器标识>:<run_id>:<task_id>:<尝试序号>` 不加 center_id——键空间按中心租户天然隔离（Loom 幂等主键是 `(tenant, key)`）。
-6. **对 Loom 零协议改动**：经反向检索确认 Loom 全部接口与存储 per-tenant，无跨租户共享状态——ms 对第二台 Loom 就是第二租户的具名主体。
-
-## 六、关键机制
-
-| 机制 | 设计 |
-|---|---|
-| **双具名主体** | `<实例>:operator`（提交目标/计划、组装批准）与 `<实例>:worker`（领取/提交）分离；批准只由用户会话主体发起，实例主体不持批准能力（不做自动批准） |
-| **租约与栅栏** | 领取带 worker 标识与租约；提交带 epoch 与幂等键；过期无未结算副作用→回池并 epoch+1，有→转人工 |
-| **暂停硬闸门** | 人工介入 = 调 `control/pause` → 运行变 paused → 任何执行器领不走（服务端闸门非协作约定）→ 人处理完 `control/resume` |
-| **副作用登记** | 执行器在不可逆动作**开始前**向中心登记意图（需 Loom 新增端点）；被杀后回收逻辑据此判不重放 |
-| **事件信封** | 与 Loom 同构：模式版本/事件标识/租户/运行/链/序号/时间戳/类型/主体/载荷/提交键/前序哈希/当前哈希；本机链只校链内连续性 |
-| **等待期人类在场** | 口径 = **桌面应用进程存活期间**（托盘常驻）；进程终止/休眠时停在待人工，恢复后由人重新触发，不自动续跑 |
-
-## 七、安全边界（三条命题分别陈述 + 本地策略锚）
-
-1. **宿主中介的约束成立但只防逃逸**：文件根限于用户主目录 + 命令放行检查；不防主目录内破坏（界内靠审批门与不可逆确认）。
-2. **插件进程本身不受约束**：以用户身份运行，装一个能力插件 = 装一个软件，如实告知（Phase 1 信任模型）。
-3. **只读标记覆盖本地写，不覆盖网络出向**：联网声明作为披露不是门禁，未声明按可联网处理。
-4. **本地策略锚**：中心（无论几台）只能收窄以上任何一条，不能放大；沙箱强制完整度诚实上报 `full | partial`。
-5. **明确不做**：OS 级沙箱（第三方分发插件出现即升必选）、computer-use 并行光标（Codex 式，安全面过大）、自动批准、出网回调、服务端推送。
-
-## 八、路线图（六批次，批次三已批准先行）
-
-| 批次 | 内容 | 状态 |
-|---|---|---|
-| 零 | fork rakazo 钉 `d13ef7a` + 裁剪 + desktop 构建跑通 | 🔶 第一刀完成：vendor `d13ef7a`（3851 文件入库、溯源与 Apache-2.0 合规）、裁剪 apps/mobile+apps/www+CI workflows、**desktop build 跑通（dist/main.js）**、adapter-kit 148 测试通过；待做：文件级裁剪（计费/消息平台/多云沙箱/local-stack） |
-| 一 | 桌面壳 ms 化：中文界面、Pi 入桌面 main 进程、本地派活入口（与批次三并行） | ⬜ 未开始 |
-| 二 | 本机执行域：沙箱三模式、凭证绊线、联网声明、本地审计替身（按中心分链） | ⬜ 未开始 |
-| 三 | **Loom 侧改造**（上方需求清单 #1-4）：事件游标、副作用登记端点、关闭机器批准路径、角色调整 | ✅ 已批准先行 |
-| 四 | 中心对接：中心注册表、逐中心配对、16 动作契约客户端、契约版本握手、双主体、幂等键四段式、加权轮询 | ⬜ 未开始 |
-| 五 | 能力插件层：插件宿主（进程内 TS + 进程外 MCP）、一键安装披露（对齐 Claude Desktop Extensions）、RV 执行器 MCP 接入、运行预设、每中心能力开关 | ⬜ 未开始 |
-
-## 九、验收判据概览（37 条，七组）
-
-A 契约与幂等（7）· B 主体与权限（5）· C 形态与降级（5）· D 插件与能力（4）· E 存储与审计（3）· F 安全与隔离（4）· G 安全性质与形态专项（9）。多中心新增断言并入原判据：G7（暂停闸门）逐中心验证；F4（跨空间拒绝）扩展为跨中心拒绝；A4（幂等键）验证跨中心不共键空间。重点专项：**G1** 副作用登记与不重放、**G3** 推送面为零、**G6** 批准主体可判定、**G7** 等待期暂停闸门、**G9** 安装披露与凭证绊线。
-
-## 十、桌面形态对标（2026-11 调研）
-
-| 产品 | 借鉴 | 不追 |
-|---|---|---|
-| Codex 桌面版（OpenAI） | agent 工作台视图 | computer-use 并行光标（安全面过大） |
-| Devin Desktop（Cognition） | Command Center 多代理/任务视图 | ACP 托管（Phase 2 候选） |
-| Claude Desktop（Anthropic） | 一键 Desktop Extensions 安装+披露 | — |
-| Manus "My Computer" | "云端大脑 + 本机手脚"分工 | — |
-| Goose（Block） | 托盘常驻、Recipes（≈运行预设） | GDK 嵌入（供插件宿主参考） |
-
-## 十一、对抗性审查（v2.4 定稿依据）
-
-最终方案经第一性原理对抗性审查，12 项发现全部回修：信任根缺失（→本地策略锚）、形态模型不完备（→N×M 矩阵）、审计溯源缺失（→按中心分链）、容量竞争无仲裁（→加权轮询）、契约版本漂移（→握手）、幂等键误加字段（→保持四段式）、令牌跨中心误用（→作用域绑定中心）、一体化与独立的张力（→语义一体化部署可分离）、多中心对 Loom 零改动的证伪检索（→成立）、审批归集（→按中心分列）、降级语义全局化（→per-center）、能力披露过宽（→每中心开关）。完整记录见方案书附录 F。
-
-## 相关仓库与致谢
-
-- **[Lizekai-522/Loom](https://github.com/Lizekai-522/Loom)** — 编排中心（本项目的另一半）
-- **[rakazo](https://github.com/elie222/rakazo)**（Apache-2.0）— 二开基座
-- [deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) / [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype)（MIT）— 形态与机制参照
-- [Realtime-Venus](https://github.com/inclusionAI/Realtime-Venus) — 能力来源（MCP 插件接入）
+本项目基于 [rakazo](https://github.com/elie222/rakazo)（Apache-2.0）重构二开，
+继承其 Apache-2.0 许可；agent 运行时参考
+[pi-durable](https://github.com/earendil-works/pi-durable)（同系依赖）。
+编排中心 [Loom](https://github.com/Lizekai-522/Loom) 为本项目的姊妹项目。
+完整第三方声明见 `docs/` 与各依赖仓库。
