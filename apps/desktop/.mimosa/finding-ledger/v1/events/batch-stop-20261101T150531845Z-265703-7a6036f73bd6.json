@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261101T150531845Z-265703-7a6036f73bd6",
+  "runId": "20261101T150531845Z-265703-7a6036f73bd6",
+  "runStatus": "inconclusive",
+  "coverage": {
+    "status": "partial",
+    "reasons": [
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/local-stack.ts",
+        "detail": "spawnSync /usr/bin/node ETIMEDOUT",
+        "affectsCompletion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/main.ts",
+        "detail": "spawnSync /usr/bin/node ETIMEDOUT",
+        "affectsCompletion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/local-stack.ts",
+        "detail": "scanner_failed: spawnSync /usr/bin/node ETIMEDOUT",
+        "affectsCompletion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/main.ts",
+        "detail": "scanner_failed: spawnSync /usr/bin/node ETIMEDOUT",
+        "affectsCompletion": true
+      }
+    ]
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "37ccb3085456bb344accf2647c4f70a973d331c4",
+  "diffHash": "17990ff0c253cfa33c447c50861a1635d3ec65e7e6bf77cbfc6b9c5911fe5e5a",
+  "rulesVersion": "unavailable",
+  "sessionHash": "513680ac5a61a6efd359f3fe27f0422d698c50af4b61fea26b4f1957416b161e",
+  "reportRef": ".mimosa/reports/task-review-sess_6da50388-95b0-4c3b-bc7d-fba7b9718a1c-20261101T150531845Z-265703-7a6036f73bd6.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [],
+  "recordedAt": "2026-11-01T15:05:35.002Z"
+}

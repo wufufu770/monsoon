@@ -581,8 +581,7 @@ export class LocalStackController {
     });
   }
 
-  private async hasLocalReleaseImages(binary: string, signal: AbortSignal): Promise<boolean> {
-    // Moving tags must still check the registry for newer images.
+  private async hasLocalReleaseImages(binary: string, signal: AbortSignal): Promise<boolean> {    // Moving tags must still check the registry for newer images.
     if (!this.deps.imageTag.startsWith("v") || !STABLE_VERSION.test(this.deps.imageTag.slice(1)))
       return false;
     const config = await this.compose(

@@ -23,12 +23,12 @@
 
   const STACK_POLL_MS = 1000;
   const PHASE_LABELS = {
-    "checking-docker": "Getting ready…",
-    preparing: "Getting ready…",
-    pulling: "Downloading Rakazo…",
-    starting: "Starting Rakazo…",
-    "waiting-healthy": "Almost ready…",
-    ready: "Rakazo is ready.",
+    "checking-docker": "正在准备…",
+    preparing: "正在准备…",
+    pulling: "正在下载 Monsoon…",
+    starting: "正在启动 Monsoon…",
+    "waiting-healthy": "即将就绪…",
+    ready: "Monsoon 已就绪。",
   };
   const TERMINAL_PHASES = new Set([
     "idle",
@@ -50,7 +50,6 @@
   const PULL_SCALE_BYTES = 1.2e9;
 
   let defaultLocalUrl = "";
-  let cloudUrl = "";
   /** Bumped on user edits, mode switches, and new async runs; a run left behind is stale. */
   let requestGeneration = 0;
   /** Generation of the check in flight; an edit or mode switch retires it and releases its lock. */
@@ -66,7 +65,7 @@
 
   function selectedMode() {
     const checked = form.querySelector('input[name="mode"]:checked');
-    return checked === null ? "cloud" : checked.value;
+    return checked === null ? "new" : checked.value;
   }
 
   function setStatus(message, tone) {
@@ -92,7 +91,7 @@
     panelNew.hidden = mode !== "new";
     panelExisting.hidden = mode !== "existing";
     checkButton.hidden = mode !== "existing";
-    if (mode !== "new") continueButton.textContent = "Continue";
+    if (mode !== "new") continueButton.textContent = "继续";
     setStatus("");
   }
 
@@ -164,7 +163,7 @@
     const { phase } = stack;
     stackSection.hidden = phase === "idle";
     if (phase === "idle") {
-      continueButton.textContent = "Continue";
+      continueButton.textContent = "继续";
       return;
     }
     const failed = isDockerPhase(phase) || phase === "failed";
@@ -177,9 +176,9 @@
     renderDetails(stack);
     stackDockerHelp.hidden = !isDockerPhase(phase);
 
-    if (isDockerPhase(phase)) continueButton.textContent = "Check again";
-    else if (phase === "failed") continueButton.textContent = "Retry";
-    else continueButton.textContent = "Continue";
+    if (isDockerPhase(phase)) continueButton.textContent = "重新检查";
+    else if (phase === "failed") continueButton.textContent = "重试";
+    else continueButton.textContent = "继续";
     setBusy(!TERMINAL_PHASES.has(phase));
   }
 
@@ -201,12 +200,12 @@
     const focused = document.activeElement;
     setBusy(true);
     lockChoice(true);
-    setStatus("Connecting…");
+    setStatus("正在连接…");
     try {
       const saved = await bridge.save({ mode, serverUrl: url, ...(headers ? { headers } : {}) });
-      if (!saved.ok) setStatus(saved.error ?? "Could not save that address.", "error");
+      if (!saved.ok) setStatus(saved.error ?? "无法保存该地址。", "error");
     } catch {
-      setStatus("Could not save that address. Try again.", "error");
+      setStatus("无法保存该地址，请重试。", "error");
     } finally {
       lockChoice(false);
       if (focused instanceof HTMLElement && document.activeElement === document.body)
@@ -260,7 +259,7 @@
     } catch {
       // Only report a follow the person still sees; leaving "new" already handed the form back.
       if (selectedMode() === "new") {
-        setStatus("Could not follow the local stack. Try again.", "error");
+        setStatus("无法跟踪本机服务状态，请重试。", "error");
         setBusy(false);
       }
     } finally {
@@ -280,7 +279,7 @@
       if (started !== null && started.phase !== "idle") renderStack(started);
     } catch {
       if (generation === requestGeneration) {
-        setStatus("Could not start the local stack. Try again.", "error");
+        setStatus("本机服务启动失败，请重试。", "error");
         setBusy(false);
       }
       return;
@@ -291,7 +290,7 @@
   async function check() {
     const value = serverUrl.value;
     if (value.trim() === "") {
-      setStatus("Enter a server address first.", "error");
+      setStatus("请先输入中心地址。", "error");
       return null;
     }
     const headers = readHeaders();
@@ -303,21 +302,21 @@
     const generation = ++requestGeneration;
     activeCheck = generation;
     setBusy(true);
-    setStatus("Checking…");
+    setStatus("正在检查…");
     try {
       const result = await bridge.test(value, headers);
       // The address or the mode changed under the test, so its result speaks for neither.
       if (generation !== requestGeneration) return result;
       if (result.ok) {
         serverUrl.value = result.url;
-        setStatus(`Rakazo answered at ${result.url}.`, "ok");
+        setStatus(`中心已在 ${result.url} 响应。`, "ok");
       } else {
-        setStatus(result.error ?? "Could not reach that address.", "error");
+        setStatus(result.error ?? "无法访问该地址。", "error");
       }
       return result;
     } catch {
       if (generation === requestGeneration) {
-        setStatus("Could not run the connection check. Try again.", "error");
+        setStatus("连接检查失败，请重试。", "error");
       }
       return null;
     } finally {
@@ -379,11 +378,9 @@
     event.preventDefault();
     const mode = selectedMode();
     if (mode === "new") void runStack();
-    // Cloud is an existing server at a fixed address.
-    else if (mode === "cloud") void save("existing", cloudUrl);
     else {
       const headers = readHeaders();
-      if (headers === null) setStatus("Invalid custom headers", "error");
+      if (headers === null) setStatus("自定义请求头格式无效", "error");
       else void save("existing", serverUrl.value, headers);
     }
   });
@@ -403,22 +400,20 @@
 
   async function init() {
     if (bridge === undefined) {
-      setStatus("Setup bridge unavailable.", "error");
+      setStatus("设置桥接不可用。", "error");
       setBusy(true);
       return;
     }
 
     watchStack();
-    // Continue needs the Cloud address and any saved choice before it can submit.
+    // Continue needs the saved choice before it can submit.
     setBusy(true);
     try {
       const state = await bridge.state();
       if (state === null) throw new Error("Setup is not active");
       defaultLocalUrl = state.defaultLocalUrl;
-      cloudUrl = state.cloudUrl;
       if (state.saved !== null) {
-        const savedCloud = state.saved.mode === "existing" && state.saved.serverUrl === cloudUrl;
-        const mode = savedCloud ? "cloud" : state.saved.mode;
+        const mode = state.saved.mode;
         const modeInput = document.querySelector(`input[name="mode"][value="${mode}"]`);
         if (modeInput !== null) modeInput.checked = true;
         if (mode === "existing") serverUrl.value = state.saved.serverUrl;
@@ -446,7 +441,7 @@
         continueButton.focus();
       }
     } catch {
-      setStatus("Setup could not start. Quit Rakazo and try again.", "error");
+      setStatus("设置无法启动。请退出 Monsoon 后重试。", "error");
       setBusy(true);
     }
   }

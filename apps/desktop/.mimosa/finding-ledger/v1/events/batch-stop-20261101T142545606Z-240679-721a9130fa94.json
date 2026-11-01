@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20261101T142545606Z-240679-721a9130fa94",
+  "runId": "20261101T142545606Z-240679-721a9130fa94",
+  "runStatus": "inconclusive",
+  "coverage": {
+    "status": "partial",
+    "reasons": [
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/setup.js",
+        "detail": "spawnSync /usr/bin/node ETIMEDOUT",
+        "affectsCompletion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/setup.js",
+        "detail": "scanner_failed: spawnSync /usr/bin/node ETIMEDOUT",
+        "affectsCompletion": true
+      }
+    ]
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "37ccb3085456bb344accf2647c4f70a973d331c4",
+  "diffHash": "e0a38acdc7b0d6382df6449543bdba1430020a1d674dccc2088b0b3700db8232",
+  "rulesVersion": "unavailable",
+  "sessionHash": "513680ac5a61a6efd359f3fe27f0422d698c50af4b61fea26b4f1957416b161e",
+  "reportRef": ".mimosa/reports/task-review-sess_6da50388-95b0-4c3b-bc7d-fba7b9718a1c-20261101T142545606Z-240679-721a9130fa94.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [],
+  "recordedAt": "2026-11-01T14:25:48.646Z"
+}

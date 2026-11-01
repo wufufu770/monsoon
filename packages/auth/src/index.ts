@@ -155,11 +155,22 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   let authContext: Promise<{ secretConfig: TokenKey }> | undefined;
   const tokenKey = async () => (await authContext!).secretConfig;
   const auth = betterAuth({
-    appName: "Rakazo",
+    appName: "Monsoon",
     logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: [...buildTrustedOrigins(env), "rakazo://"],
+    // GitHub 登录（拍板二十）：GITHUB_CLIENT_ID/SECRET 就位时自动启用，未配置则不出现在登录页。
+    socialProviders: {
+      ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+        ? {
+            github: {
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            },
+          }
+        : {}),
+    },
     account: {
       accountLinking: { enabled: true, disableImplicitLinking: true, trustedProviders: [] },
       encryptOAuthTokens: true,

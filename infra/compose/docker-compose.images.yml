@@ -16,6 +16,8 @@ name: rakazo
 x-app-environment: &app-environment
   # Runtime
   NODE_ENV: production
+  # 本机部署零账号（拍板十七）：所有请求视为唯一本地所有者。
+  LOCAL_SINGLE_USER: ${LOCAL_SINGLE_USER:-}
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
   REALTIME_DATABASE_URL:
@@ -291,6 +293,7 @@ services:
   # Pull-only stub so `compose up` fetches the published desktop image without a checkout.
   computer:
     image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+    pull_policy: never
     command: ["true"]
     network_mode: none
     restart: "no"
@@ -308,6 +311,7 @@ services:
   # access to the supervisor is equivalent to control of the Docker host.
   supervisor:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    pull_policy: never
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/sandbox-supervisor", "start"]
     init: true
@@ -367,6 +371,7 @@ services:
   # security binds, so code running in either cannot find a login that bypasses it.
   migrate:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    pull_policy: never
     working_dir: /app/apps/api
     command: ["pnpm", "db:deploy"]
     restart: "no"
@@ -387,6 +392,7 @@ services:
 
   api:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    pull_policy: never
     restart: unless-stopped
     # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
     # process before its graceful shutdown finishes in-flight requests and jobs.
@@ -478,6 +484,7 @@ services:
 
   worker:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    pull_policy: never
     restart: unless-stopped
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
@@ -517,6 +524,7 @@ services:
 
   web:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    pull_policy: never
     restart: unless-stopped
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/web

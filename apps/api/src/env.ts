@@ -63,6 +63,9 @@ export interface AppEnv {
   ticketBoardEnabled: boolean;
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
+  /** LOCAL_SINGLE_USER=1 makes every request act as the single verified local owner: the
+   * local deployment has no sign-up or sign-in, and the only credential is a model API key. */
+  localSingleUser: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
   navLinks?: NavLink[];
   /** Verified accounts that review plugin submissions, add stdio MCP servers, and grant access
@@ -250,6 +253,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
     userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
+    /** LOCAL_SINGLE_USER=1 makes every request act as the single verified local owner (本机部署零账号). */
+    localSingleUser: source.LOCAL_SINGLE_USER === "1",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),

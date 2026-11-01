@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-11-01T16:03:51.039Z",
+  "sessionId": "sess_6da50388-95b0-4c3b-bc7d-fba7b9718a1c",
+  "event": "PostToolUse",
+  "toolName": "Write",
+  "file": "/home/kali/monsoon-work/launch-monsoon.sh",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 24,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

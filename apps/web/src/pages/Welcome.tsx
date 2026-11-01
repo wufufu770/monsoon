@@ -5,7 +5,7 @@ import { WindowChrome } from "./WindowChrome";
 export function WelcomePage() {
   const navigate = useNavigate();
   return (
-    <div className="flex min-h-full flex-col bg-background" data-rakazo-surface="welcome">
+    <div className="flex min-h-full flex-col bg-background" data-monsoon-surface="welcome">
       <div className="app-drag flex gap-2 px-5 py-[18px]">
         <WindowChrome />
       </div>
@@ -16,14 +16,14 @@ export function WelcomePage() {
             <span className="h-[17px] w-2 rounded-full bg-card sm:h-6 sm:w-[11px]" />
           </div>
           <h1 className="text-[56px] leading-none tracking-[-0.03em] text-foreground sm:text-[76px]">
-            Rakazo
+            Monsoon
           </h1>
         </div>
         <p className="max-w-[600px] text-center text-[27px] leading-[1.4] text-foreground/75">
           <Trans>
-            Your team of always-on agents
+            跑在你自己机器上的常驻 agent，
             <br />
-            that you can give real work to.
+            把真正的工作交给它。
           </Trans>
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -32,14 +32,14 @@ export function WelcomePage() {
             onClick={() => navigate("/sign-up")}
             className="app-no-drag rounded-full bg-accent px-[34px] py-[15px] text-[19px] text-foreground transition hover:scale-[1.04] hover:bg-accent"
           >
-            <Trans>Sign up</Trans>
+            <Trans>注册</Trans>
             <span aria-hidden="true">&nbsp;&nbsp;→</span>
           </button>
           <Link
             to="/sign-in"
             className="app-no-drag rounded-full px-[34px] py-[15px] text-[19px] text-foreground/75 transition hover:text-foreground"
           >
-            <Trans>Sign in</Trans>
+            <Trans>登录</Trans>
           </Link>
         </div>
       </main>

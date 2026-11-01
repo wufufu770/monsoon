@@ -24,6 +24,7 @@ Loom 与 ms **按一个整体设计，两侧互相适配**——一体化的单�
 | 4 | 角色能力集调整（worker 增 `control` 但仅限 pause/resume） | `src/loom/auth.py:22` | 需调整 |
 | 5 | 契约版本握手回执字段（配对/发现响应带 `contract_version`） | 现无 | 需新增 |
 | 6 | 续租路由（存储层 `renew_claim` 已有，暴露成路由） | `src/loom/store.py:376` | Phase 1 只做端点不使用 |
+| 7 | 设备直连实时通道：`WS /v1/events/stream`（token 鉴权，事件推送；ms 主动直连，无第三方中继） | 现为轮询（拍板二十修订 G3） | 需新增（实时性） |
 
 ## 二、系统总览
 

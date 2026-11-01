@@ -903,6 +903,42 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     if (isBlockedAuthPath(path)) {
       return c.json({ error: "Not available in version 1" }, 404);
     }
+    // 本机部署零账号：会话状态永远合成已登录的本地所有者，注册/登录/登出全部失效。
+    if (env.localSingleUser) {
+      if (path === "/get-session" && c.req.method === "GET") {
+        const user = await prisma.user.findFirst({
+          where: { emailVerified: true },
+          orderBy: [{ createdAt: "asc" }],
+        });
+        if (user) {
+          const now = new Date();
+          return c.json({
+            session: {
+              id: "local-single-user",
+              userId: user.id,
+              expiresAt: new Date(now.getTime() + 3650 * 86_400_000).toISOString(),
+              ipAddress: null,
+              userAgent: null,
+              createdAt: now.toISOString(),
+              updatedAt: now.toISOString(),
+            },
+            user: {
+              id: user.id,
+              email: user.email,
+              name: user.name,
+              emailVerified: true,
+              image: user.image,
+              createdAt: user.createdAt.toISOString(),
+              updatedAt: user.updatedAt.toISOString(),
+            },
+          });
+        }
+      }
+      if (path === "/sign-out" && c.req.method === "POST") return c.json({ success: true });
+      if (path === "/sign-up/email" || path === "/sign-in/email") {
+        return c.json({ error: "Not available in local single-user mode" }, 404);
+      }
+    }
     const ip = requestClientIp(c);
     const response = await auth.handler(withClientIp(emptyAuthBodyAsJson(c.req.raw), ip));
     await auditAuthResponse(path, ip, response);
@@ -914,6 +950,19 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
   });
   const requestSession = async (request: Request) => {
+    // 本机部署零账号：LOCAL_SINGLE_USER=1 时所有请求直接视为唯一已验证本地所有者，
+    // 不读取任何会话 Cookie；租户隔离仍走 requireMembership 的真实判定。
+    if (env.localSingleUser) {
+      const user = await prisma.user.findFirst({
+        where: { emailVerified: true },
+        orderBy: [{ createdAt: "asc" }],
+      });
+      if (!user) return null;
+      const actor = await actorFromMembership(
+        requireMembership(prisma, user.id, request.headers.get("x-rakazo-space-id")),
+      );
+      return actor && { actor, sessionId: "local-single-user" };
+    }
     // The bearer plugin turns a signed `Authorization: Bearer` into the session cookie.
     const session = await auth.api.getSession({ headers: request.headers });
     if (!session?.user) return null;

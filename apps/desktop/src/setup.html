@@ -1,42 +1,37 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'"
     />
-    <title>Set up Rakazo</title>
+    <title>Monsoon 设置</title>
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="setup.css" />
   </head>
   <body>
     <header class="titlebar">
-      <span class="titlebar-name">Rakazo</span>
-      <button id="quit" class="titlebar-quit" type="button" title="Quit Rakazo">Quit</button>
+      <span class="titlebar-name">Monsoon</span>
+      <button id="quit" class="titlebar-quit" type="button" title="退出 Monsoon">退出</button>
     </header>
 
     <main class="shell">
-      <h1 class="heading">Welcome to Rakazo</h1>
-      <p class="subheading">Choose which server this app should use.</p>
+      <h1 class="heading">欢迎使用 Monsoon</h1>
+      <p class="subheading">选择这台机器上 agent 的运行方式。</p>
 
       <form id="setup" novalidate>
         <fieldset class="choices">
-          <legend class="sr-only">Instance</legend>
-
-          <label class="choice" for="mode-cloud">
-            <input id="mode-cloud" type="radio" name="mode" value="cloud" checked />
-            <span class="choice-title">Rakazo Cloud</span>
-          </label>
+          <legend class="sr-only">运行方式</legend>
 
           <label class="choice" for="mode-new">
-            <input id="mode-new" type="radio" name="mode" value="new" />
-            <span class="choice-title">This computer</span>
+            <input id="mode-new" type="radio" name="mode" value="new" checked />
+            <span class="choice-title">本机模式（推荐）— agent 在这台电脑上运行</span>
           </label>
 
           <label class="choice" for="mode-existing">
             <input id="mode-existing" type="radio" name="mode" value="existing" />
-            <span class="choice-title">Existing instance</span>
+            <span class="choice-title">连接 Loom 中心 — 编排与审计交给 Loom</span>
           </label>
         </fieldset>
 
@@ -50,8 +45,8 @@
                 type="button"
                 aria-controls="stack-output"
                 aria-expanded="false"
-                aria-label="Technical details"
-                title="Technical details"
+                aria-label="技术细节"
+                title="技术细节"
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
                   <path d="M3.5 4.5 7 8l-3.5 3.5M8.5 11.5H13" />
@@ -62,7 +57,7 @@
               id="stack-progress"
               class="progress"
               role="progressbar"
-              aria-label="Setup progress"
+              aria-label="设置进度"
               aria-valuemin="0"
               aria-valuemax="100"
               aria-valuenow="0"
@@ -81,25 +76,25 @@
         </section>
 
         <section id="panel-existing" class="panel" hidden>
-          <label class="field-label" for="server-url">Server address</label>
+          <label class="field-label" for="server-url">Loom 中心地址</label>
           <input
             id="server-url"
             class="field"
             type="text"
             spellcheck="false"
             autocomplete="off"
-            placeholder="https://rakazo.example.com"
+            placeholder="https://loom.example.com"
           />
           <details id="server-headers-section" class="headers">
-            <summary>Headers</summary>
+            <summary>自定义请求头</summary>
             <textarea
               id="server-headers"
               class="field"
               rows="2"
               spellcheck="false"
               autocomplete="off"
-              aria-label="Headers"
-              placeholder="Name: value"
+              aria-label="自定义请求头"
+              placeholder="名称: 值"
             ></textarea>
           </details>
         </section>
@@ -107,8 +102,8 @@
         <p id="status" class="status" role="status" aria-live="polite"></p>
 
         <div class="actions">
-          <button id="check" class="button button-secondary" type="button">Check connection</button>
-          <button id="continue" class="button button-primary" type="submit">Continue</button>
+          <button id="check" class="button button-secondary" type="button">检查连接</button>
+          <button id="continue" class="button button-primary" type="submit">继续</button>
         </div>
       </form>
     </main>
