@@ -19,11 +19,12 @@ from loom.store import Store  # noqa: E402
 TOKEN = "e2e-loom-token-0123456789abcdef"
 
 def main() -> None:
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 4610
     tmp = tempfile.TemporaryDirectory()
     store = Store(Path(tmp.name) / "e2e.db")
     app = create_app(store, {"tenant-a": TOKEN})
-    print(f"[loom-center] ready on 127.0.0.1:4610 token={TOKEN}", flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=4610, log_level="warning")
+    print(f"[loom-center] ready on 127.0.0.1:{port} token={TOKEN}", flush=True)
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 if __name__ == "__main__":
     main()

@@ -63,6 +63,13 @@
 - 执行器完整 Harness（模型会话）接入后的二次联调（pi-durable 的
   GenerationTask 全链路）。
 
+## 六、增补验证（2026-11-03，批次四/五收口）
+
+- **双中心 e2e**（`scripts/e2e/run-centers.ts`，EXIT=0）：两台真实 Loom 实例同时注册——契约握手 ms-1 双过、加权路由分布、**账本不串**（A 登记 intent、B 查无此 run）、A kill 后冻结且 B 照常可建任务。拍板十五机器验证达成。
+- **RV 接入**（`scripts/rv-bridge/`，PASS）：真导入 RV harness/skills.py 的 SkillRegistry（仅标准库依赖），routing_contracts→MCP 工具声明（readOnly+不出网），宿主注入 stub planner，McpStdioHost list/call 全通——判据 D3 的 RV 版达成。
+- **Loom 自立形态 G4**（`scripts/e2e/loom_standalone_g4.py`，7/7）：不装 ms——goal→plan(v0.23.0 schema 定长 7 角色)→批准（原子派生任务）→claim→submit(epoch 栅栏)→replay/integrity 全通。托管 run 禁手动建任务、幂等键需唯一——两处实测学得。
+- 审计文档同步更新：批次四 🟡核心达成、批次五 🟡部分达成、拍板十五 🟡、拍板十八 ✅。
+
 ---
 
 **VERDICT: PASS**

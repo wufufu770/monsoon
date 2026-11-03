@@ -29,6 +29,9 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.15
         version: 2.5.15
+      '@monsoon/ms-capabilities':
+        specifier: workspace:*
+        version: link:packages/ms-capabilities
       '@monsoon/ms-runtime':
         specifier: workspace:*
         version: link:packages/ms-runtime
