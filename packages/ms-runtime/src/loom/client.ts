@@ -5,9 +5,13 @@
  */
 export interface LoomClientOptions {
   readonly baseUrl: string;
-  readonly token: string;
+  /** 双具名主体（方案 5.3）：operator 提交目标/计划，worker 领取/提交。 */
+  readonly operatorToken?: string;
+  readonly workerToken: string;
   readonly tenantId: string;
   readonly timeoutMs?: number;
+  /** 契约握手（拍板十四）：不匹配即拒绝连接并说明。缺省不校验版本内容。 */
+  readonly expectedContractVersion?: string;
 }
 
 export interface LoomClaim {
@@ -29,11 +33,15 @@ export class LoomClient {
     this.timeoutMs = options.timeoutMs ?? 10_000;
   }
 
-  private async request(method: string, path: string, body?: unknown, idempotencyKey?: string): Promise<unknown> {
+  private async request(method: string, path: string, body?: unknown, idempotencyKey?: string,
+                        which: "operator" | "worker" = "worker"): Promise<unknown> {
+    const token = which === "operator"
+      ? (this.options.operatorToken ?? this.options.workerToken)
+      : this.options.workerToken;
     const response = await fetch(`${this.options.baseUrl}${path}`, {
       method,
       headers: {
-        authorization: `Bearer ${this.options.token}`,
+        authorization: `Bearer ${token}`,
         ...(idempotencyKey ? { "idempotency-key": idempotencyKey } : {}),
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
       },
@@ -61,6 +69,20 @@ export class LoomClient {
       `${input.taskId}:claim`)) as { claim: LoomClaim | null };
     if (claimResult.claim === null) throw new Error(`Loom 无可领取任务: ${run.run_id}`);
     return { runId: run.run_id, claim: claimResult.claim };
+  }
+
+  /** 契约版本握手（拍板十四）：中心 /health 带 contract_version；期望值不匹配即抛错。 */
+  async handshake(): Promise<{ version: string; contractVersion: string | null }> {
+    const health = (await this.request("GET", "/health")) as {
+      version?: string; contract_version?: string;
+    };
+    const contractVersion = health?.contract_version ?? null;
+    const expected = this.options.expectedContractVersion;
+    if (expected !== undefined && contractVersion !== expected) {
+      throw new LoomApiError(426,
+        `契约版本不匹配：期望 ${expected}，中心为 ${contractVersion ?? "未声明"}`);
+    }
+    return { version: health?.version ?? "unknown", contractVersion };
   }
 
   /** 副作用登记（步骤三端点）：首次 201、重复 200——调用方无需区分。 */

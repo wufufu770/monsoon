@@ -12,3 +12,14 @@ export {
 } from "./security-constants.js";
 export { evaluateCredentialGuard, normalizeGuardPath, type CredentialGuardVerdict } from "./credential-guard.js";
 export { AuditChain, canonicalJson, type AuditEvent, type AuditEventInput } from "./audit-chain.js";
+export {
+  revalidateMandate,
+  type Mandate,
+  type MandateRevalidationInput,
+  type MandateVerdict,
+} from "./mandate.js";
+export {
+  admissionDecide,
+  type AdmissionDecision,
+  type AdmissionMode,
+} from "./admission.js";

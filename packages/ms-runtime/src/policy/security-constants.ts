@@ -13,6 +13,9 @@
 export const SIDE_EFFECT_LEVELS = ["read", "write", "destructive", "irreversible"] as const;
 export type SideEffectLevel = (typeof SIDE_EFFECT_LEVELS)[number];
 
+/** 执行域（方案 6.1 节）：本机或中心侧。集中定义避免多处漂移。 */
+export type ExecutionDomain = "local" | "remote";
+
 /** 高危等级：调用前强制走 PreExecutionProof（本地校验），门槛不由中心或本机配置决定。 */
 export const HIGH_RISK_SIDE_EFFECT_LEVELS: readonly SideEffectLevel[] = [
   "destructive",

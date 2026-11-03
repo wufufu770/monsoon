@@ -1,5 +1,5 @@
 diff --git a/src/loom/api.py b/src/loom/api.py
-index 5c81353..63dc59a 100644
+index 5c81353..181ce1d 100644
 --- a/src/loom/api.py
 +++ b/src/loom/api.py
 @@ -97,6 +97,18 @@ class ReconciliationEvidence(Input):
@@ -21,7 +21,18 @@ index 5c81353..63dc59a 100644
  class ReconciliationInput(Input):
      decision: str = Field(pattern=r"^(completed|not_sent)$")
      evidence: ReconciliationEvidence
-@@ -375,6 +387,20 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
+@@ -273,7 +285,9 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
+ 
+     @app.get("/health")
+     def health():
+-        return {"status": "ok", "version": __version__, "stage": "S1-local", "external_writes_enabled": False}
++        # ms 契约握手（方案 v2.5 拍板十四）：ms 连接前核对 contract_version。
++        return {"status": "ok", "version": __version__, "stage": "S1-local", "external_writes_enabled": False,
++                "contract_version": "ms-1"}
+ 
+     @app.post("/v1/goals", status_code=201)
+     def create_goal(body: GoalInput, identity: Writer, idempotency_key: Key):
+@@ -375,6 +389,20 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
              raise HTTPException(404, "unknown control action")
          return getattr(operators, action)(identity.tenant_id, run_id, idempotency_key, "subject:" + identity.subject_id, body.reason)
  
@@ -42,7 +53,7 @@ index 5c81353..63dc59a 100644
      @app.post("/v1/runs/{run_id}/effects/{call_id}/reconcile")
      def reconcile(run_id: str, call_id: str, body: ReconciliationInput, identity: Controller, idempotency_key: Key):
          return operators.reconcile_effect(identity.tenant_id, run_id, call_id, idempotency_key,
-@@ -541,7 +567,13 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
+@@ -541,7 +569,14 @@ def create_app(store: Store, tenant_keys: dict[str, str], *, identities: tuple[L
          return store.submit_output(current, idempotency_key, body.output)
  
      @app.get("/v1/runs/{run_id}/events")
@@ -50,10 +61,11 @@ index 5c81353..63dc59a 100644
 +    def events(run_id: str, tenant: Tenant,
 +               after_seq: int = Query(default=0, ge=0),
 +               limit: int = Query(default=0, ge=0, le=500)):
-+        # ms 游标分页（方案 v2.5 步骤三）：limit>0 时返回 {events, next_seq}，
-+        # 游标归消费者所有；limit=0 保持原全量快照形状，旧消费者不受影响。
-+        if limit > 0:
-+            return store.events_page(tenant, run_id, after_seq=after_seq, limit=limit)
++        # ms 游标分页（方案 v2.5 步骤三，v3 契约）：limit 缺省 100、上限 500；
++        # 游标归消费者所有。limit=0 且未指定 after_seq 时保持原全量快照形状。
++        if after_seq > 0 or limit > 0:
++            return store.events_page(tenant, run_id, after_seq=after_seq,
++                                     limit=limit if limit > 0 else 100)
          return {"events": store.events(tenant, run_id)}
  
      @app.get("/v1/runs/{run_id}/replay")

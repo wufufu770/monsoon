@@ -23,3 +23,16 @@ export {
   type ExecutorTool,
   type TickOutcome,
 } from "./loop.js";
+export {
+  createExecutorExtension,
+  executeWithSandwich,
+  type SandwichDeps,
+  type SandwichOutcome,
+} from "./harness-factory.js";
+export { buildReport, type HumanAction, type ReportState, type TaskReport } from "./report.js";
+export {
+  resolveModelProvider,
+  readPiModelsConfig,
+  type ModelProviderKind,
+  type ResolvedModelProvider,
+} from "./model-config.js";

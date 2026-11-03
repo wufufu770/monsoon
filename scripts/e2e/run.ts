@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       }
     }, 30_000, "Loom 中心启动");
     if (!loomUp) throw new Error("Loom 中心未能启动");
-    const loom = new LoomClient({ baseUrl: LOOM_URL, token: LOOM_TOKEN, tenantId: "tenant-a" });
+    const loom = new LoomClient({ baseUrl: LOOM_URL, workerToken: LOOM_TOKEN, tenantId: "tenant-a" });
 
     // 中心就绪后再起执行器并派活。
     const executor = spawnExecutor({

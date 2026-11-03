@@ -91,7 +91,7 @@ describe("执行器三明治循环", () => {
     const audit = new AuditChain();
     const client = new LoomClient({
       baseUrl: loomUrl!,
-      token: process.env.MS_E2E_LOOM_TOKEN ?? "e2e-token",
+      workerToken: process.env.MS_E2E_LOOM_TOKEN ?? "e2e-token",
       tenantId: "tenant-a",
     });
     const loop = new ExecutorLoop({

@@ -53,7 +53,7 @@ const tools: ExecutorTool[] = [
 const stores = openLocalStores(dataDir);
 const loomUrl = process.env.MS_E2E_LOOM_URL;
 const loom = loomUrl
-  ? new LoomClient({ baseUrl: loomUrl, token: process.env.MS_E2E_LOOM_TOKEN ?? "", tenantId: "tenant-a" })
+  ? new LoomClient({ baseUrl: loomUrl, workerToken: process.env.MS_E2E_LOOM_TOKEN ?? "", tenantId: "tenant-a" })
   : undefined;
 
 const events: { type: string; payload: Record<string, unknown> }[] = [];
